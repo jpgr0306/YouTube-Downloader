@@ -65,8 +65,7 @@ btn.onclick = async () => {
         else if (tipo === "B:") {
           const bin = atob(dado), bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-          partes.push(bytes); recebido += bytes.length;
-          log("Recebendo arquivo... " + (recebido / 1048576).toFixed(1) + " MB");
+          partes.push(bytes); recebido += bytes.length;  // o progresso vem do servidor
         } else if (tipo === "E:") {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(new Blob(partes, { type: "application/octet-stream" }));

@@ -207,8 +207,12 @@ def baixar(vid, qualidade, pasta, q):
 
         # yt-dlp separado que baixa um formato usando as infos ja descobertas
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+        # -N 8 baixa 8 pedacos por vez; cada pedaco fica um instante num arquivo
+        # temporario na pasta atual -> por isso os processos rodam com cwd=pasta (/tmp),
+        # ja que a pasta do codigo na Vercel e so leitura
         base = [sys.executable, "-m", "yt_dlp", "--load-info-json", info_json, "--newline",
-                "--no-part", "--no-color", "-N", "8", "--cache-dir", os.path.join(TMP, "yt-dlp-cache")]
+                "--no-part", "--no-color", "-N", "8",
+                "--abort-on-unavailable-fragments", "--cache-dir", os.path.join(TMP, "yt-dlp-cache")]
         if cookies:
             base += ["--cookies", cookies]
         if deno_bin:
@@ -221,7 +225,7 @@ def baixar(vid, qualidade, pasta, q):
             # baixa o audio primeiro (e pequeno)
             q.put(("L", "Baixando o audio..."))
             r = subprocess.run(base + ["-f", formatos[1]["format_id"], "-o", os.path.join(pasta, "audio.%(ext)s")],
-                               stdin=subprocess.DEVNULL, capture_output=True, env=env)
+                               stdin=subprocess.DEVNULL, capture_output=True, env=env, cwd=pasta)
             achados = [a for a in os.listdir(pasta) if a.startswith("audio.")]
             if r.returncode != 0 or not achados:
                 for e in r.stderr.decode("utf-8", "replace").splitlines()[-5:]:
@@ -249,14 +253,16 @@ def baixar(vid, qualidade, pasta, q):
         cmd.append("pipe:1")
 
         nome = "%s [%s].%s" % (yt_dlp.utils.sanitize_filename(info.get("title") or vid), vid, ext)
-        q.put(("L", ("Baixando o audio e convertendo" if so_audio else "Baixando o video e juntando com o audio")
-                    + " - vai direto pro navegador, sem salvar no servidor..."))
+        acao = ("Baixando o audio e convertendo" if so_audio else
+                "Baixando o video e juntando com o audio" if audio_arquivo else "Baixando o video")
+        q.put(("L", acao + " - vai direto pro navegador, sem salvar no servidor..."))
         q.put(("F", nome))
 
         baixador = subprocess.Popen(base + ["-f", principal["format_id"], "-o", "-"],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, env=env)
-        juntador = subprocess.Popen(cmd, stdin=baixador.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                    stderr=subprocess.PIPE, env=env, cwd=pasta)
+        juntador = subprocess.Popen(cmd, stdin=baixador.stdout, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, cwd=pasta)
         baixador.stdout.close()  # agora so o ffmpeg le esse pipe
         erros = []
         t1 = threading.Thread(target=repassar, args=(baixador.stderr, q), daemon=True)

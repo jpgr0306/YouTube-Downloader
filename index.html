@@ -2,27 +2,26 @@
 <html lang="pt-br">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Baixar do YouTube</title>
+<title>Baixar vídeo do YouTube</title>
 <style>
   body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 12px }
   input { width: 55%; padding: 8px } select, button { padding: 8px }
   pre { background: #111; color: #0f0; padding: 12px; height: 400px; overflow: auto; white-space: pre-wrap }
 </style>
-<h2>Baixar video do YouTube</h2>
+<h2>Baixar vídeo do YouTube</h2>
 <input id="url" placeholder="https://www.youtube.com/watch?v=...">
 <select id="qual">
   <option value="melhor">Melhor qualidade</option>
-  <option value="2160">Ate 4K (2160p)</option>
-  <option value="1440">Ate 1440p</option>
-  <option value="1080">Ate 1080p</option>
-  <option value="720">Ate 720p</option>
-  <option value="480">Ate 480p</option>
-  <option value="360">Ate 360p</option>
-  <option value="mp3">So audio (MP3)</option>
-  <option value="m4a">So audio (M4A)</option>
+  <option value="2160">Até 4K (2160p)</option>
+  <option value="1440">Até 1440p</option>
+  <option value="1080">Até 1080p</option>
+  <option value="720">Até 720p</option>
+  <option value="480">Até 480p</option>
+  <option value="360">Até 360p</option>
+  <option value="mp3">Só áudio (MP3)</option>
 </select>
 <button id="btn">Baixar</button>
-<p style="color:#666;font-size:13px">Se o video nao tiver a qualidade escolhida, baixa a melhor abaixo dela.</p>
+<p style="color:#666;font-size:13px">Se o vídeo não tiver a qualidade escolhida, baixa a melhor abaixo dela.</p>
 <pre id="out"></pre>
 <script>
 const out = document.getElementById("out"), btn = document.getElementById("btn");
@@ -40,7 +39,7 @@ btn.onclick = async () => {
   btn.disabled = true; linhas = []; out.textContent = "";
   let nome = "video.mp4", partes = [], resto = "", recebido = 0;
   if (location.protocol === "file:") {
-    log("Erro: abra pelo endereco da Vercel (https://...vercel.app), nao pelo arquivo index.html.");
+    log("Erro: abra pelo endereço da Vercel (https://...vercel.app), não pelo arquivo index.html.");
     btn.disabled = false; return;
   }
   log("Chamando o servidor... (pode levar alguns segundos)");
@@ -70,13 +69,13 @@ btn.onclick = async () => {
           const a = document.createElement("a");
           a.href = URL.createObjectURL(new Blob(partes, { type: "application/octet-stream" }));
           a.download = nome; a.click();
-          log("Download concluido: " + nome);
+          log("Download concluído: " + nome);
         }
       }
     }
   } catch (e) {
     log("Erro: " + e);
-    log("A conexao caiu. Na Vercel isso costuma ser a funcao travando ou passando do tempo limite: veja em Vercel > Logs.");
+    log("A conexão caiu. Na Vercel isso costuma ser a função travando ou passando do tempo limite: veja em Vercel > Logs.");
   }
   btn.disabled = false;
 };

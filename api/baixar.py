@@ -53,7 +53,7 @@ def achar_deno(log):
     if not sys.platform.startswith("linux"):
         return None
     try:
-        log("Baixando o deno (so na primeira vez neste servidor)...")
+        log("Baixando o deno (só na primeira vez neste servidor)...")
         zip_path = destino + ".zip"
         urllib.request.urlretrieve(DENO_ZIP, zip_path)
         with zipfile.ZipFile(zip_path) as z:
@@ -62,7 +62,7 @@ def achar_deno(log):
         os.chmod(destino, 0o755)
         return destino
     except Exception as e:
-        log("AVISO: nao consegui baixar o deno: %s" % e)
+        log("AVISO: não consegui baixar o deno: %s" % e)
         return None
 
 
@@ -105,8 +105,11 @@ def arquivo_cookies():
     return caminho
 
 # qualidades da pagina (altura maxima do video, ou so audio)
-QUALIDADES = ["melhor", "2160", "1440", "1080", "720", "480", "360", "mp3", "m4a"]
-AUDIO = {"mp3": "ba/b", "m4a": "ba[ext=m4a]/ba/b"}
+QUALIDADES = ["melhor", "2160", "1440", "1080", "720", "480", "360", "mp3"]
+# so audio: melhor audio separado; se o YouTube so oferecer video+audio juntos
+# (acontece com cookies), pega o mais leve ate 360p, que ja tem audio de 128 kbps,
+# em vez de baixar um video 1080p inteiro so pra tirar o som
+AUDIO = {"mp3": "ba/b[height<=360][acodec!=none]/w[acodec!=none]/b"}
 MB = 1024 * 1024
 BLOCO = 3 * 256 * 1024  # tamanho de cada pedaco mandado pro navegador
 
@@ -183,13 +186,13 @@ def baixar(vid, qualidade, pasta, q):
     cookies = arquivo_cookies()
     if cookies:
         opts["cookiefile"] = cookies
-        q.put(("L", "Usando cookies do YouTube (variavel YOUTUBE_COOKIES)."))
+        q.put(("L", "Usando cookies do YouTube (variável YOUTUBE_COOKIES)."))
     elif os.environ.get("VERCEL"):
-        q.put(("L", "AVISO: variavel YOUTUBE_COOKIES nao encontrada neste deploy "
-                    "(confira o nome, o ambiente Production e faca Redeploy)."))
+        q.put(("L", "AVISO: variável YOUTUBE_COOKIES não encontrada neste deploy "
+                    "(confira o nome, o ambiente Production e faça Redeploy)."))
     ffmpeg = achar_ffmpeg()
     if not ffmpeg:
-        q.put(("L", "ERRO: ffmpeg nao encontrado."))
+        q.put(("L", "ERRO: ffmpeg não encontrado."))
         q.put(("FIM", 1))
         return
 
@@ -223,14 +226,14 @@ def baixar(vid, qualidade, pasta, q):
         audio_arquivo = None
         if len(formatos) == 2:
             # baixa o audio primeiro (e pequeno)
-            q.put(("L", "Baixando o audio..."))
+            q.put(("L", "Baixando o áudio..."))
             r = subprocess.run(base + ["-f", formatos[1]["format_id"], "-o", os.path.join(pasta, "audio.%(ext)s")],
                                stdin=subprocess.DEVNULL, capture_output=True, env=env, cwd=pasta)
             achados = [a for a in os.listdir(pasta) if a.startswith("audio.")]
             if r.returncode != 0 or not achados:
                 for e in r.stderr.decode("utf-8", "replace").splitlines()[-5:]:
                     q.put(("L", e))
-                raise RuntimeError("falha ao baixar o audio")
+                raise RuntimeError("falha ao baixar o áudio")
             audio_arquivo = os.path.join(pasta, achados[0])
 
         frag = ["-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof"]
@@ -241,9 +244,6 @@ def baixar(vid, qualidade, pasta, q):
         if qualidade == "mp3":
             cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "320k", "-f", "mp3"]
             ext = "mp3"
-        elif qualidade == "m4a":
-            cmd += ["-vn", "-c:a", "copy"] + aac + frag
-            ext = "m4a"
         elif audio_arquivo:
             cmd += ["-i", audio_arquivo, "-map", "0:v:0", "-map", "1:a:0", "-c", "copy"] + frag
             ext = "mp4"
@@ -253,8 +253,8 @@ def baixar(vid, qualidade, pasta, q):
         cmd.append("pipe:1")
 
         nome = "%s [%s].%s" % (yt_dlp.utils.sanitize_filename(info.get("title") or vid), vid, ext)
-        acao = ("Baixando o audio e convertendo" if so_audio else
-                "Baixando o video e juntando com o audio" if audio_arquivo else "Baixando o video")
+        acao = ("Baixando o áudio e convertendo pra MP3" if so_audio else
+                "Baixando o vídeo e juntando com o áudio" if audio_arquivo else "Baixando o vídeo")
         q.put(("L", acao + " - vai direto pro navegador, sem salvar no servidor..."))
         q.put(("F", nome))
 
@@ -313,7 +313,7 @@ async def app(scope, receive, send):
         await send({"type": "http.response.body", "body": (txt + "\n").encode(), "more_body": True})
 
     if not vid:
-        await linha("L:Link invalido. Cole um link do YouTube.")
+        await linha("L:Link inválido. Cole um link do YouTube.")
         await send({"type": "http.response.body", "body": b""})
         return
 
@@ -339,7 +339,7 @@ async def app(scope, receive, send):
             await linha("L:Pronto! %.1f MB enviados." % (enviado / MB))
             await linha("E:")
         else:
-            await linha("L:Deu erro (codigo %s)." % valor)
+            await linha("L:Deu erro (código %s)." % valor)
     finally:
         shutil.rmtree(pasta, ignore_errors=True)
         await send({"type": "http.response.body", "body": b""})

@@ -7,22 +7,80 @@ import queue
 import re
 import shutil
 import tempfile
+import stat
+import sys
 import threading
 import urllib.parse
+import urllib.request
+import zipfile
 
 import yt_dlp
 
-try:
-    import deno  # binario do deno via pip; o yt-dlp precisa dele pro YouTube
-    DENO = deno.find_deno_bin()
-except Exception:
-    DENO = None
+TMP = tempfile.gettempdir()
+DENO_ZIP = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip"
 
-try:
-    import imageio_ffmpeg  # binario do ffmpeg via pip; junta video + audio
-    FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
-except Exception:
-    FFMPEG = None
+
+def executavel(caminho):
+    """Garante permissao de execucao; se a pasta for so leitura, copia pra /tmp."""
+    if not caminho or not os.path.isfile(caminho):
+        return None
+    if os.access(caminho, os.X_OK):
+        return caminho
+    copia = os.path.join(TMP, os.path.basename(caminho))
+    if not os.path.isfile(copia):
+        shutil.copy(caminho, copia)
+    os.chmod(copia, os.stat(copia).st_mode | stat.S_IEXEC)
+    return copia
+
+
+def achar_deno(log):
+    """O yt-dlp precisa do deno pro YouTube. No PC vem do pip; na Vercel a pasta
+    bin/ do pip nao e enviada, entao baixa o binario oficial pra /tmp (1x por servidor)."""
+    try:
+        import deno
+        achado = executavel(deno.find_deno_bin())
+        if achado:
+            return achado
+    except Exception:
+        pass
+    destino = os.path.join(TMP, "deno")
+    if os.path.isfile(destino):
+        return destino
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        log("Baixando o deno (so na primeira vez neste servidor)...")
+        zip_path = destino + ".zip"
+        urllib.request.urlretrieve(DENO_ZIP, zip_path)
+        with zipfile.ZipFile(zip_path) as z:
+            z.extract("deno", TMP)
+        os.remove(zip_path)
+        os.chmod(destino, 0o755)
+        return destino
+    except Exception as e:
+        log("AVISO: nao consegui baixar o deno: %s" % e)
+        return None
+
+
+def achar_ffmpeg():
+    try:
+        import imageio_ffmpeg  # binario do ffmpeg via pip; junta video + audio
+        return executavel(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return None
+
+
+def arquivo_cookies():
+    """Cookies do YouTube (formato Netscape) vindos da variavel YOUTUBE_COOKIES,
+    configurada no painel da Vercel. Evita o 'Sign in to confirm you're not a bot'."""
+    conteudo = os.environ.get("YOUTUBE_COOKIES", "").strip()
+    if not conteudo:
+        return None
+    caminho = os.path.join(TMP, "youtube_cookies.txt")
+    with open(caminho, "w", encoding="utf-8") as f:
+        # aceita o arquivo colado normal ou com \n e \t escritos como texto
+        f.write(conteudo.replace("\\n", "\n").replace("\\t", "\t") + "\n")
+    return caminho
 
 # qualidade escolhida na pagina -> formato do yt-dlp
 VIDEO = "bv*[height<={h}]+ba/b[height<={h}]"
@@ -85,10 +143,16 @@ def baixar(vid, qualidade, pasta, q):
         "cachedir": os.path.join(tempfile.gettempdir(), "yt-dlp-cache"),
         "color": {"stdout": "no_color", "stderr": "no_color"},
     }
-    if DENO:
-        opts["js_runtimes"] = {"deno": {"path": DENO}}
-    if FFMPEG:
-        opts["ffmpeg_location"] = FFMPEG
+    deno_bin = achar_deno(lambda m: q.put(("L", m)))
+    ffmpeg_bin = achar_ffmpeg()
+    if deno_bin:
+        opts["js_runtimes"] = {"deno": {"path": deno_bin}}
+    cookies = arquivo_cookies()
+    if cookies:
+        opts["cookiefile"] = cookies
+        q.put(("L", "Usando cookies do YouTube (variavel YOUTUBE_COOKIES)."))
+    if ffmpeg_bin:
+        opts["ffmpeg_location"] = ffmpeg_bin
         if qualidade == "mp3":
             opts["postprocessors"] = [{"key": "FFmpegExtractAudio",
                                        "preferredcodec": "mp3", "preferredquality": "0"}]

@@ -70,16 +70,34 @@ def achar_ffmpeg():
         return None
 
 
+def cabecalho_para_netscape(cabecalho):
+    """Converte o cabecalho 'cookie' copiado do Inspecionar (nome=valor; nome2=valor2)
+    pro formato de arquivo que o yt-dlp entende."""
+    linhas = ["# Netscape HTTP Cookie File"]
+    for parte in cabecalho.split(";"):
+        nome, igual, valor = parte.strip().partition("=")
+        if not igual or not nome:
+            continue
+        linhas.append("\t".join([".youtube.com", "TRUE", "/", "TRUE", "2147483647", nome, valor]))
+    return "\n".join(linhas)
+
+
 def arquivo_cookies():
-    """Cookies do YouTube (formato Netscape) vindos da variavel YOUTUBE_COOKIES,
-    configurada no painel da Vercel. Evita o 'Sign in to confirm you're not a bot'."""
+    """Cookies do YouTube vindos da variavel YOUTUBE_COOKIES (painel da Vercel).
+    Aceita o arquivo cookies.txt (Netscape) ou o cabecalho 'cookie' do Inspecionar.
+    Evita o 'Sign in to confirm you're not a bot'."""
     conteudo = os.environ.get("YOUTUBE_COOKIES", "").strip()
     if not conteudo:
         return None
+    # aceita o arquivo colado normal ou com \n e \t escritos como texto
+    conteudo = conteudo.replace("\\n", "\n").replace("\\t", "\t")
+    if conteudo.lower().startswith("cookie:"):
+        conteudo = conteudo[7:].strip()
+    if "\t" not in conteudo:  # nao e arquivo Netscape: e o cabecalho do Inspecionar
+        conteudo = cabecalho_para_netscape(conteudo)
     caminho = os.path.join(TMP, "youtube_cookies.txt")
     with open(caminho, "w", encoding="utf-8") as f:
-        # aceita o arquivo colado normal ou com \n e \t escritos como texto
-        f.write(conteudo.replace("\\n", "\n").replace("\\t", "\t") + "\n")
+        f.write(conteudo + "\n")
     return caminho
 
 # qualidade escolhida na pagina -> formato do yt-dlp

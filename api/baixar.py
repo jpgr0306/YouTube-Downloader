@@ -120,7 +120,7 @@ def montar_formato(qualidade):
     """Formato do yt-dlp: melhor video + melhor audio (o limite de qualidade fica na ordenacao)."""
     if qualidade in AUDIO:
         return AUDIO[qualidade]
-    return "bv*+ba{d}/bv*+ba/b".format(d=SEM_DRC)
+    return "bv*+ba{d}/bv*+ba/b/b*".format(d=SEM_DRC)
 
 
 def ordenacao(qualidade):
@@ -135,13 +135,20 @@ def ordenacao(qualidade):
     return ["lang", res, "br", "ext:mp4:m4a"]
 
 
-def extrair_id(texto):
+def normalizar_url(texto):
+    """Devolve (url, e_youtube) ou None.
+    YouTube: so o ID do video (ignora playlist, &si=, &t= etc.).
+    Outros sites (Instagram, TikTok, Facebook...): o link como veio."""
     texto = texto.strip()
-    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})", texto)
-    if m:
-        return m.group(1)
     if re.fullmatch(r"[A-Za-z0-9_-]{11}", texto):
-        return texto
+        return "https://www.youtube.com/watch?v=" + texto, True
+    if re.search(r"(?:^|[/.])(?:youtube\.com|youtu\.be|youtube-nocookie\.com)", texto, re.I):
+        m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([A-Za-z0-9_-]{11})", texto)
+        return ("https://www.youtube.com/watch?v=" + m.group(1), True) if m else None
+    if not re.match(r"https?://", texto, re.I) and re.match(r"[\w-]+(\.[\w-]+)+/", texto):
+        texto = "https://" + texto  # colou sem o https://
+    if re.match(r"https?://[\w-]+(\.[\w-]+)+(/|$)", texto, re.I) and " " not in texto:
+        return texto, False
     return None
 
 
@@ -174,7 +181,7 @@ def repassar(fluxo, q, erros=None):
             q.put(("L", txt))
 
 
-def baixar(vid, qualidade, pasta, q):
+def baixar(url, e_youtube, qualidade, pasta, q):
     """Roda em outra thread: manda ("L", log), ("F", nome), ("B", bytes) e ("FIM", codigo).
 
     1. yt-dlp (aqui mesmo) so descobre os formatos e salva as infos num .json pequeno.
@@ -183,8 +190,11 @@ def baixar(vid, qualidade, pasta, q):
        direto (pipe) pro ffmpeg; o ffmpeg junta com o audio e escreve MP4 fragmentado
        na saida dele, que vai saindo em pedacos pro navegador. O video nunca vai pro disco.
     """
-    url = "https://www.youtube.com/watch?v=" + vid
     opts = {
+        # so sites que o yt-dlp conhece; o extrator "generico" (qualquer pagina) fica
+        # desligado pra ninguem usar o servidor como proxy pra endereco qualquer
+        "allowed_extractors": ["default", "-generic"],
+        "playlistend": 1,  # link com varios videos (carrossel do Instagram etc.): so o 1o
         "format_sort": ordenacao(qualidade),
         "format": montar_formato(qualidade),
         "noplaylist": True,
@@ -192,14 +202,15 @@ def baixar(vid, qualidade, pasta, q):
         "cachedir": os.path.join(TMP, "yt-dlp-cache"),
         "color": {"stdout": "no_color", "stderr": "no_color"},
     }
-    deno_bin = achar_deno(lambda m: q.put(("L", m)))
+    # deno e cookies so fazem sentido pro YouTube
+    deno_bin = achar_deno(lambda m: q.put(("L", m))) if e_youtube else None
     if deno_bin:
         opts["js_runtimes"] = {"deno": {"path": deno_bin}}
-    cookies = arquivo_cookies()
+    cookies = arquivo_cookies() if e_youtube else None
     if cookies:
         opts["cookiefile"] = cookies
         q.put(("L", "Usando cookies do YouTube (variável YOUTUBE_COOKIES)."))
-    elif os.environ.get("VERCEL"):
+    elif e_youtube and os.environ.get("VERCEL"):
         q.put(("L", "AVISO: variável YOUTUBE_COOKIES não encontrada neste deploy "
                     "(confira o nome, o ambiente Production e faça Redeploy)."))
     ffmpeg = achar_ffmpeg()
@@ -212,6 +223,13 @@ def baixar(vid, qualidade, pasta, q):
         q.put(("L", "> yt-dlp -f \"%s\" %s" % (opts["format"], url)))
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)  # so descobre os formatos
+            if info.get("_type") in ("playlist", "multi_video"):
+                # carrossel / post com varios videos: pega o primeiro que tem formato
+                videos = [e for e in (info.get("entries") or []) if e and e.get("format_id")]
+                if not videos:
+                    raise RuntimeError("esse link não tem vídeo pra baixar")
+                q.put(("L", "Esse link tem mais de um vídeo; baixando o primeiro."))
+                info = videos[0]
             info_json = os.path.join(pasta, "info.json")
             with open(info_json, "w", encoding="utf-8") as f:
                 json.dump(ydl.sanitize_info(info), f)
@@ -261,10 +279,13 @@ def baixar(vid, qualidade, pasta, q):
             ext = "mp4"
         else:
             cmd += ["-c", "copy"] + aac + frag
-            ext = "mp4"
+            # sites so de audio (SoundCloud, Bandcamp...): .m4a em vez de .mp4
+            # (vcodec None = desconhecido, pode ter video; so "none" e certeza de que nao tem)
+            ext = "m4a" if principal.get("vcodec") == "none" else "mp4"
         cmd.append("pipe:1")
 
-        nome = "%s [%s].%s" % (yt_dlp.utils.sanitize_filename(info.get("title") or vid), vid, ext)
+        ident = info.get("id") or "video"
+        nome = "%s [%s].%s" % (yt_dlp.utils.sanitize_filename(info.get("title") or ident)[:150], ident, ext)
         acao = ("Baixando o áudio e convertendo pra MP3" if so_audio else
                 "Baixando o vídeo e juntando com o áudio" if audio_arquivo else "Baixando o vídeo")
         q.put(("L", acao + " - vai direto pro navegador, sem salvar no servidor..."))
@@ -312,7 +333,7 @@ async def app(scope, receive, send):
         await send({"type": "http.response.body", "body": corpo})
         return
     qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
-    vid = extrair_id(qs.get("url", [""])[0])
+    link = normalizar_url(qs.get("url", [""])[0])
     qualidade = qs.get("q", ["melhor"])[0]
     if qualidade not in QUALIDADES:
         qualidade = "melhor"
@@ -324,14 +345,14 @@ async def app(scope, receive, send):
     async def linha(txt):
         await send({"type": "http.response.body", "body": (txt + "\n").encode(), "more_body": True})
 
-    if not vid:
-        await linha("L:Link inválido. Cole um link do YouTube.")
+    if not link:
+        await linha("L:Link inválido. Cole o link de um vídeo (YouTube, Instagram, TikTok...).")
         await send({"type": "http.response.body", "body": b""})
         return
 
     pasta = tempfile.mkdtemp()  # so pro audio e o .json de infos
     q = queue.Queue(maxsize=32)  # limita a memoria se o navegador for mais lento que o download
-    threading.Thread(target=baixar, args=(vid, qualidade, pasta, q), daemon=True).start()
+    threading.Thread(target=baixar, args=(link[0], link[1], qualidade, pasta, q), daemon=True).start()
     loop = asyncio.get_running_loop()
     enviado = 0
     try:

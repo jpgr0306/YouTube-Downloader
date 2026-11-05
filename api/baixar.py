@@ -18,6 +18,28 @@ try:
 except Exception:
     DENO = None
 
+try:
+    import imageio_ffmpeg  # binario do ffmpeg via pip; junta video + audio
+    FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+except Exception:
+    FFMPEG = None
+
+# qualidade escolhida na pagina -> formato do yt-dlp
+VIDEO = "bv*[height<={h}]+ba/b[height<={h}]"
+QUALIDADES = {
+    "melhor": "bv*+ba/b",
+    "2160": VIDEO.format(h=2160),
+    "1440": VIDEO.format(h=1440),
+    "1080": VIDEO.format(h=1080),
+    "720": VIDEO.format(h=720),
+    "480": VIDEO.format(h=480),
+    "360": VIDEO.format(h=360),
+    "mp3": "ba/b",
+    "m4a": "ba[ext=m4a]/ba/b",
+}
+# sem ffmpeg so da pra baixar formatos que ja vem com video + audio juntos
+SEM_FFMPEG = "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]"
+
 
 def extrair_id(texto):
     texto = texto.strip()
@@ -46,11 +68,13 @@ class Log:
         self.q.put(("L", msg))
 
 
-def baixar(vid, pasta, q):
+def baixar(vid, qualidade, pasta, q):
     opts = {
         "outtmpl": os.path.join(pasta, "%(title)s [%(id)s].%(ext)s"),
-        # sem ffmpeg na Vercel: pega um formato que ja vem com video + audio juntos
-        "format": "best[ext=mp4][vcodec!=none][acodec!=none]/best[vcodec!=none][acodec!=none]",
+        "format": QUALIDADES[qualidade],
+        # na mesma resolucao, prefere H.264 + m4a (abre em qualquer player)
+        "format_sort": ["res", "vcodec:h264", "ext:mp4:m4a"],
+        "merge_output_format": "mp4",
         "noplaylist": True,
         "logger": Log(q),
         "progress_with_newline": True,
@@ -59,8 +83,16 @@ def baixar(vid, pasta, q):
     }
     if DENO:
         opts["js_runtimes"] = {"deno": {"path": DENO}}
+    if FFMPEG:
+        opts["ffmpeg_location"] = FFMPEG
+        if qualidade == "mp3":
+            opts["postprocessors"] = [{"key": "FFmpegExtractAudio",
+                                       "preferredcodec": "mp3", "preferredquality": "0"}]
+    else:
+        q.put(("L", "AVISO: ffmpeg nao encontrado, baixando a melhor qualidade sem precisar juntar (geralmente 360p)."))
+        opts["format"] = SEM_FFMPEG
     try:
-        q.put(("L", "> yt-dlp https://www.youtube.com/watch?v=" + vid))
+        q.put(("L", "> yt-dlp -f \"%s\" https://www.youtube.com/watch?v=%s" % (opts["format"], vid)))
         with yt_dlp.YoutubeDL(opts) as ydl:
             codigo = ydl.download(["https://www.youtube.com/watch?v=" + vid])
     except Exception as e:  # erro do yt-dlp ja foi logado; garante que termina
@@ -74,6 +106,9 @@ async def app(scope, receive, send):
         return
     qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
     vid = extrair_id(qs.get("url", [""])[0])
+    qualidade = qs.get("q", ["melhor"])[0]
+    if qualidade not in QUALIDADES:
+        qualidade = "melhor"
 
     await send({"type": "http.response.start", "status": 200,
                 "headers": [(b"content-type", b"text/plain; charset=utf-8"),
@@ -89,7 +124,7 @@ async def app(scope, receive, send):
 
     pasta = tempfile.mkdtemp()
     q = queue.Queue()
-    threading.Thread(target=baixar, args=(vid, pasta, q), daemon=True).start()
+    threading.Thread(target=baixar, args=(vid, qualidade, pasta, q), daemon=True).start()
     loop = asyncio.get_running_loop()
     try:
         while True:
@@ -99,7 +134,9 @@ async def app(scope, receive, send):
             for parte in str(valor).splitlines():
                 await linha("L:" + parte)
 
-        arquivos = [f for f in os.listdir(pasta) if not f.endswith((".part", ".ytdl"))]
+        # ignora pedacos que sobram do download (.part, .f137.mp4 etc.)
+        arquivos = [f for f in os.listdir(pasta)
+                    if not f.endswith((".part", ".ytdl")) and not re.search(r"\.f\d+\.\w+$", f)]
         if valor != 0 or not arquivos:
             await linha("L:Deu erro (codigo %s)." % valor)
         else:

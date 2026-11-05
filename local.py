@@ -1,5 +1,6 @@
 """Roda o mesmo site no seu PC: http://localhost:8000
 (serve o index.html e a mesma funcao api/baixar.py que roda na Vercel)."""
+import importlib
 import os
 import sys
 import threading
@@ -18,7 +19,8 @@ async def app(scope, receive, send):
     if scope["type"] != "http":
         return
     if scope["path"].startswith("/api/baixar"):
-        return await baixar.app(scope, receive, send)
+        # recarrega a cada pedido: se o codigo mudar, nao precisa reabrir a janela
+        return await importlib.reload(baixar).app(scope, receive, send)
     with open(os.path.join(RAIZ, "index.html"), "rb") as f:
         corpo = f.read()
     await send({"type": "http.response.start", "status": 200,

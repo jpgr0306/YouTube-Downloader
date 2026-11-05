@@ -230,18 +230,21 @@ def baixar(vid, qualidade, pasta, q):
             audio_arquivo = os.path.join(pasta, achados[0])
 
         frag = ["-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof"]
+        # formatos HLS com video+audio juntos vem em MPEG-TS, com AAC no formato ADTS:
+        # pra caber no MP4 precisa desse filtro (so quando o audio e AAC)
+        aac = ["-bsf:a", "aac_adtstoasc"] if (principal.get("acodec") or "").startswith("mp4a") else []
         cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-i", "pipe:0"]
         if qualidade == "mp3":
             cmd += ["-vn", "-c:a", "libmp3lame", "-b:a", "320k", "-f", "mp3"]
             ext = "mp3"
         elif qualidade == "m4a":
-            cmd += ["-vn", "-c:a", "copy"] + frag
+            cmd += ["-vn", "-c:a", "copy"] + aac + frag
             ext = "m4a"
         elif audio_arquivo:
             cmd += ["-i", audio_arquivo, "-map", "0:v:0", "-map", "1:a:0", "-c", "copy"] + frag
             ext = "mp4"
         else:
-            cmd += ["-c", "copy"] + frag
+            cmd += ["-c", "copy"] + aac + frag
             ext = "mp4"
         cmd.append("pipe:1")
 

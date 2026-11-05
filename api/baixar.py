@@ -70,8 +70,9 @@ class Log:
 
 def baixar(vid, qualidade, pasta, q):
     opts = {
-        "outtmpl": os.path.join(pasta, "%(title)s [%(id)s].%(ext)s"),
-        "paths": {"temp": pasta},  # arquivos de teste do yt-dlp (na Vercel so /tmp aceita escrita)
+        "outtmpl": "%(title)s [%(id)s].%(ext)s",
+        # tudo (inclusive arquivos de teste) na pasta temporaria; na Vercel so /tmp aceita escrita
+        "paths": {"home": pasta, "temp": pasta},
         "format": QUALIDADES[qualidade],
         # na mesma resolucao, pega o maior bitrate (menos pixelado); o YouTube
         # costuma ter versoes 1080p de 768 kbps ate 3500 kbps ("Premium")

@@ -26,10 +26,13 @@
 <pre id="out"></pre>
 <script>
 const out = document.getElementById("out"), btn = document.getElementById("btn");
+// progresso ("[download]  42.0% ...") fica sempre numa linha so, que vai sendo atualizada;
 // ate 100 linhas mostra tudo; dali pra frente so troca a ultima linha
 let linhas = [];
+const progresso = (t) => /^\[download\]\s+[\d.]+%|^Recebendo arquivo/.test(t || "");
 const log = (t) => {
-  if (linhas.length < 100) linhas.push(t); else linhas[99] = t;
+  if (progresso(t) && progresso(linhas[linhas.length - 1])) linhas[linhas.length - 1] = t;
+  else if (linhas.length < 100) linhas.push(t); else linhas[99] = t;
   out.textContent = linhas.join("\n") + "\n"; out.scrollTop = 1e9;
 };
 
@@ -63,7 +66,6 @@ btn.onclick = async () => {
           const bin = atob(dado), bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           partes.push(bytes); recebido += bytes.length;
-          if (/^Recebendo arquivo/.test(linhas[linhas.length - 1])) linhas.pop();
           log("Recebendo arquivo... " + (recebido / 1048576).toFixed(1) + " MB");
         } else if (tipo === "E:") {
           const a = document.createElement("a");

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="pt-br">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baixar do YouTube</title>
+<style>
+  body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 0 12px }
+  input { width: 70%; padding: 8px } button { padding: 8px 16px }
+  pre { background: #111; color: #0f0; padding: 12px; height: 400px; overflow: auto; white-space: pre-wrap }
+</style>
+<h2>Baixar video do YouTube</h2>
+<input id="url" placeholder="https://www.youtube.com/watch?v=..."><button id="btn">Baixar</button>
+<pre id="out"></pre>
+<script>
+const out = document.getElementById("out"), btn = document.getElementById("btn");
+const log = (t) => { out.textContent += t + "\n"; out.scrollTop = 1e9; };
+
+btn.onclick = async () => {
+  btn.disabled = true; out.textContent = "";
+  let nome = "video.mp4", partes = [], resto = "", recebido = 0;
+  try {
+    const r = await fetch("/api/baixar?url=" + encodeURIComponent(document.getElementById("url").value));
+    const rd = r.body.getReader(), dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await rd.read();
+      if (done) break;
+      const linhas = (resto + dec.decode(value, { stream: true })).split("\n");
+      resto = linhas.pop();
+      for (const l of linhas) {
+        const tipo = l.slice(0, 2), dado = l.slice(2);
+        if (tipo === "L:") log(dado);
+        else if (tipo === "F:") nome = dado;
+        else if (tipo === "B:") {
+          const bin = atob(dado), bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          partes.push(bytes); recebido += bytes.length;
+          out.textContent = out.textContent.replace(/Recebendo arquivo.*\n$/, "");
+          log("Recebendo arquivo... " + (recebido / 1048576).toFixed(1) + " MB");
+        } else if (tipo === "E:") {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob(partes, { type: "video/mp4" }));
+          a.download = nome; a.click();
+          log("Download concluido: " + nome);
+        }
+      }
+    }
+  } catch (e) { log("Erro: " + e); }
+  btn.disabled = false;
+};
+</script>
+</html>

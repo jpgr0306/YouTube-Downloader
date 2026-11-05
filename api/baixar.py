@@ -109,17 +109,30 @@ QUALIDADES = ["melhor", "2160", "1440", "1080", "720", "480", "360", "mp3"]
 # so audio: melhor audio separado; se o YouTube so oferecer video+audio juntos
 # (acontece com cookies), pega o mais leve ate 360p, que ja tem audio de 128 kbps,
 # em vez de baixar um video 1080p inteiro so pra tirar o som
-AUDIO = {"mp3": "ba/b[height<=360][acodec!=none]/w[acodec!=none]/b"}
+# audio "DRC" = versao com volume comprimido pelo YouTube: so usa se nao tiver a normal
+SEM_DRC = "[format_id!*=drc]"
+AUDIO = {"mp3": "ba%s/ba/b[height<=360][acodec!=none]/w[acodec!=none]/b" % SEM_DRC}
 MB = 1024 * 1024
 BLOCO = 3 * 256 * 1024  # tamanho de cada pedaco mandado pro navegador
 
 
 def montar_formato(qualidade):
-    """Formato do yt-dlp: melhor video ate a altura escolhida + melhor audio."""
+    """Formato do yt-dlp: melhor video + melhor audio (o limite de qualidade fica na ordenacao)."""
     if qualidade in AUDIO:
         return AUDIO[qualidade]
-    filtro = "" if qualidade == "melhor" else "[height<=%s]" % qualidade
-    return "bv*{f}+ba/b{f}".format(f=filtro)
+    return "bv*+ba{d}/bv*+ba/b".format(d=SEM_DRC)
+
+
+def ordenacao(qualidade):
+    """Ordem de preferencia dos formatos:
+    1. audio no idioma ORIGINAL (o YouTube tem dublagens automaticas em ingles, espanhol...;
+       nos EUA, onde fica a Vercel, o padrao costuma ser o ingles);
+    2. resolucao: "res" e o lado MENOR do video, igual o YouTube chama "720p" -- assim
+       Shorts (em pe) tambem funcionam. "res:720" = o maior que nao passa de 720
+       (se nao tiver nenhum, o menor acima);
+    3. na mesma resolucao, o maior bitrate (menos pixelado)."""
+    res = "res" if qualidade in ("melhor",) or qualidade in AUDIO else "res:" + qualidade
+    return ["lang", res, "br", "ext:mp4:m4a"]
 
 
 def extrair_id(texto):
@@ -172,8 +185,7 @@ def baixar(vid, qualidade, pasta, q):
     """
     url = "https://www.youtube.com/watch?v=" + vid
     opts = {
-        # na mesma resolucao, pega o maior bitrate (menos pixelado)
-        "format_sort": ["res", "br", "ext:mp4:m4a"],
+        "format_sort": ordenacao(qualidade),
         "format": montar_formato(qualidade),
         "noplaylist": True,
         "logger": Log(q),

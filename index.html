@@ -26,10 +26,15 @@
 <pre id="out"></pre>
 <script>
 const out = document.getElementById("out"), btn = document.getElementById("btn");
-const log = (t) => { out.textContent += t + "\n"; out.scrollTop = 1e9; };
+// ate 100 linhas mostra tudo; dali pra frente so troca a ultima linha
+let linhas = [];
+const log = (t) => {
+  if (linhas.length < 100) linhas.push(t); else linhas[99] = t;
+  out.textContent = linhas.join("\n") + "\n"; out.scrollTop = 1e9;
+};
 
 btn.onclick = async () => {
-  btn.disabled = true; out.textContent = "";
+  btn.disabled = true; linhas = []; out.textContent = "";
   let nome = "video.mp4", partes = [], resto = "", recebido = 0;
   if (location.protocol === "file:") {
     log("Erro: abra pelo endereco da Vercel (https://...vercel.app), nao pelo arquivo index.html.");
@@ -48,9 +53,9 @@ btn.onclick = async () => {
     while (true) {
       const { done, value } = await rd.read();
       if (done) break;
-      const linhas = (resto + dec.decode(value, { stream: true })).split("\n");
-      resto = linhas.pop();
-      for (const l of linhas) {
+      const chegou = (resto + dec.decode(value, { stream: true })).split("\n");
+      resto = chegou.pop();
+      for (const l of chegou) {
         const tipo = l.slice(0, 2), dado = l.slice(2);
         if (tipo === "L:") log(dado);
         else if (tipo === "F:") nome = dado;
@@ -58,7 +63,7 @@ btn.onclick = async () => {
           const bin = atob(dado), bytes = new Uint8Array(bin.length);
           for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           partes.push(bytes); recebido += bytes.length;
-          out.textContent = out.textContent.replace(/Recebendo arquivo.*\n$/, "");
+          if (/^Recebendo arquivo/.test(linhas[linhas.length - 1])) linhas.pop();
           log("Recebendo arquivo... " + (recebido / 1048576).toFixed(1) + " MB");
         } else if (tipo === "E:") {
           const a = document.createElement("a");

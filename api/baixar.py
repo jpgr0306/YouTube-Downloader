@@ -71,10 +71,13 @@ class Log:
 def baixar(vid, qualidade, pasta, q):
     opts = {
         "outtmpl": os.path.join(pasta, "%(title)s [%(id)s].%(ext)s"),
+        "paths": {"temp": pasta},  # arquivos de teste do yt-dlp (na Vercel so /tmp aceita escrita)
         "format": QUALIDADES[qualidade],
-        # na mesma resolucao, prefere H.264 + m4a (abre em qualquer player)
-        "format_sort": ["res", "vcodec:h264", "ext:mp4:m4a"],
+        # na mesma resolucao, pega o maior bitrate (menos pixelado); o YouTube
+        # costuma ter versoes 1080p de 768 kbps ate 3500 kbps ("Premium")
+        "format_sort": ["res", "br", "ext:mp4:m4a"],
         "merge_output_format": "mp4",
+        "concurrent_fragment_downloads": 8,  # formatos melhores vem em varios pedacos
         "noplaylist": True,
         "logger": Log(q),
         "progress_with_newline": True,

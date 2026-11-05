@@ -169,6 +169,9 @@ def baixar(vid, qualidade, pasta, q):
     if cookies:
         opts["cookiefile"] = cookies
         q.put(("L", "Usando cookies do YouTube (variavel YOUTUBE_COOKIES)."))
+    elif os.environ.get("VERCEL"):
+        q.put(("L", "AVISO: variavel YOUTUBE_COOKIES nao encontrada neste deploy "
+                    "(confira o nome, o ambiente Production e faca Redeploy)."))
     if ffmpeg_bin:
         opts["ffmpeg_location"] = ffmpeg_bin
         if qualidade == "mp3":

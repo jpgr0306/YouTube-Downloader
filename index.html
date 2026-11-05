@@ -18,8 +18,18 @@ const log = (t) => { out.textContent += t + "\n"; out.scrollTop = 1e9; };
 btn.onclick = async () => {
   btn.disabled = true; out.textContent = "";
   let nome = "video.mp4", partes = [], resto = "", recebido = 0;
+  if (location.protocol === "file:") {
+    log("Erro: abra pelo endereco da Vercel (https://...vercel.app), nao pelo arquivo index.html.");
+    btn.disabled = false; return;
+  }
+  log("Chamando o servidor... (pode levar alguns segundos)");
   try {
     const r = await fetch("/api/baixar?url=" + encodeURIComponent(document.getElementById("url").value));
+    if (!r.ok) {
+      log("Erro do servidor: HTTP " + r.status);
+      log((await r.text()).slice(0, 1500));
+      btn.disabled = false; return;
+    }
     const rd = r.body.getReader(), dec = new TextDecoder();
     while (true) {
       const { done, value } = await rd.read();
@@ -44,7 +54,10 @@ btn.onclick = async () => {
         }
       }
     }
-  } catch (e) { log("Erro: " + e); }
+  } catch (e) {
+    log("Erro: " + e);
+    log("A conexao caiu. Na Vercel isso costuma ser a funcao travando ou passando do tempo limite: veja em Vercel > Logs.");
+  }
   btn.disabled = false;
 };
 </script>

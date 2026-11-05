@@ -1,0 +1,12 @@
+[project]
+name = "youtube-downloader"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "yt-dlp[default]",
+    "deno",
+    "imageio-ffmpeg",
+]
+
+[tool.vercel]
+entrypoint = "api.baixar:app"

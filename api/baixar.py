@@ -105,10 +105,21 @@ def baixar(vid, qualidade, pasta, q):
     q.put(("FIM", codigo))
 
 
+INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "index.html")
+
+
 async def app(scope, receive, send):
     if scope["type"] != "http":
         return
-    qs = urllib.parse.parse_qs(scope.get("query_string", b"").decode())
+    if not scope["path"].startswith("/api/baixar"):
+        # qualquer outro endereco: devolve a pagina
+        with open(INDEX, "rb") as f:
+            corpo = f.read()
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": [(b"content-type", b"text/html; charset=utf-8")]})
+        await send({"type": "http.response.body", "body": corpo})
+        return
+    qs =urllib.parse.parse_qs(scope.get("query_string", b"").decode())
     vid = extrair_id(qs.get("url", [""])[0])
     qualidade = qs.get("q", ["melhor"])[0]
     if qualidade not in QUALIDADES:
